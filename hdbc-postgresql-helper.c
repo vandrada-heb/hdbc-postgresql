@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "hdbc-postgresql-helper.h"
+#include <pthread.h>
 
 /* Things can't finalize more than once.  
 We'd like to let people call them from the app.
@@ -22,17 +23,21 @@ finalizeonce *wrapobjpg(void *obj, finalizeonce *parentobj) {
   newobj->refcount = 1;
   newobj->encapobj = obj;
   newobj->parent = parentobj;
-  if (parentobj != NULL) 
+  pthread_mutex_init(&newobj->lock, NULL);
+  if (parentobj != NULL)
     parentobj->refcount++;
   return newobj;
 }
-  
+
 void PQfinish_app(finalizeonce *conn) {
+  pthread_mutex_lock(&conn->lock);
   if (conn->isfinalized)
     return;
   PQfinish((PGconn *) (conn->encapobj));
   conn->encapobj = NULL;
   conn->isfinalized = 1;
+  pthread_mutex_unlock(&conn->lock);
+  pthread_mutex_destroy(&conn->lock);
 }
 
 void PQfinish_finalizer(finalizeonce *conn) {
@@ -62,4 +67,3 @@ void PQclear_finalizer(finalizeonce *res) {
   PQfinish_conditional_finalizer(res->parent);
   free(res);
 }
-
